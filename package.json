@@ -19,8 +19,8 @@
     "react-native-epub-parser": "^0.2.0",
     "react-native-fs": "^2.20.0",
     "react-native-pdf": "^6.7.4",
-    "react-native-safe-area-context": "^4.8.2",
-    "react-native-screens": "^3.29.0",
+    "react-native-safe-area-context": "^4.6.3",
+    "react-native-screens": "^3.22.0",
     "react-native-uuid": "^2.0.1"
   },
   "devDependencies": {

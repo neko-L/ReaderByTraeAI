@@ -47,6 +47,8 @@ const ReaderScreen: React.FC = () => {
   const [fileType, setFileType] = useState<string>('');
 
   useEffect(() => {
+    let isSubscribed = true;
+
     // 设置导航标题
     navigation.setOptions({
       title: book.title,
@@ -68,16 +70,28 @@ const ReaderScreen: React.FC = () => {
     loadHighlights();
 
     return () => {
+      isSubscribed = false;
       // 退出时保存阅读进度
       handleSaveProgress();
+      // 清理内存中的内容
+      setContent('');
+      setHighlights([]);
     };
   }, []);
 
   const loadContent = async () => {
     try {
-      // 对于txt文件，直接读取内容
+      // 对于txt文件，使用分块读取优化内存使用
       if (fileType === 'txt') {
-        const fileContent = await RNFS.readFile(book.filePath, 'utf8');
+        const stats = await RNFS.stat(book.filePath);
+        const chunkSize = 1024 * 1024; // 1MB chunks
+        let fileContent = '';
+        
+        for (let offset = 0; offset < stats.size; offset += chunkSize) {
+          const chunk = await RNFS.read(book.filePath, chunkSize, offset, 'utf8');
+          fileContent += chunk;
+        }
+        
         setContent(fileContent);
       }
       // 其他文件类型在各自的渲染器中处理
@@ -162,49 +176,51 @@ const ReaderScreen: React.FC = () => {
   };
 
   // 渲染高亮文本
+  // 优化高亮渲染性能
   const renderHighlightedContent = () => {
     if (!content || highlights.length === 0) {
       return <Text style={styles.textContent}>{content}</Text>;
     }
 
-    // 按位置排序高亮
-    const sortedHighlights = [...highlights].sort((a, b) => a.position - b.position);
-    const textParts = [];
-    let lastIndex = 0;
+    // 使用缓存优化渲染
+    const memoizedHighlights = React.useMemo(() => {
+      const sortedHighlights = [...highlights].sort((a, b) => a.position - b.position);
+      const textParts = [];
+      let lastIndex = 0;
 
-    sortedHighlights.forEach((highlight, index) => {
-      if (highlight.position >= 0) {
-        // 添加高亮前的文本
-        if (highlight.position > lastIndex) {
+      sortedHighlights.forEach((highlight, index) => {
+        if (highlight.position >= 0) {
+          if (highlight.position > lastIndex) {
+            textParts.push(
+              <Text key={`text-${index}`} style={styles.textContent}>
+                {content.substring(lastIndex, highlight.position)}
+              </Text>
+            );
+          }
           textParts.push(
-            <Text key={`text-${index}`} style={styles.textContent}>
-              {content.substring(lastIndex, highlight.position)}
+            <Text
+              key={`highlight-${highlight.id}`}
+              style={[styles.textContent, { backgroundColor: highlight.color }]}
+            >
+              {highlight.text}
             </Text>
           );
+          lastIndex = highlight.position + highlight.text.length;
         }
-        // 添加高亮文本
+      });
+
+      if (lastIndex < content.length) {
         textParts.push(
-          <Text
-            key={`highlight-${highlight.id}`}
-            style={[styles.textContent, { backgroundColor: highlight.color }]}
-          >
-            {highlight.text}
+          <Text key="text-end" style={styles.textContent}>
+            {content.substring(lastIndex)}
           </Text>
         );
-        lastIndex = highlight.position + highlight.text.length;
       }
-    });
 
-    // 添加最后一部分文本
-    if (lastIndex < content.length) {
-      textParts.push(
-        <Text key="text-end" style={styles.textContent}>
-          {content.substring(lastIndex)}
-        </Text>
-      );
-    }
+      return textParts;
+    }, [content, highlights]);
 
-    return <Text>{textParts}</Text>;
+    return <>{memoizedHighlights}</>;
   };
 
   const renderContent = () => {
